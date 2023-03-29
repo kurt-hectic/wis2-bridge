@@ -1,0 +1,6 @@
+.env
+certs/wis2_bridge_new.private.key
+certs/wis2_bridge_new.cert.pem
+debug.log
+cloud-watch.csv
+cloud-watch.log

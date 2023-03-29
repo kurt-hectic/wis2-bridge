@@ -1,0 +1,7 @@
+version: "3.9"
+services:
+  bridge:
+    build: .
+    volumes:
+      - ./wis2toaws.py:/app/wis2toaws.py
+    restart: on-failure
