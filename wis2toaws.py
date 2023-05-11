@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 from paho.mqtt.properties import Properties
 from paho.mqtt.packettypes import PacketTypes
 
+from datetime import datetime
+
 logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',level=logging.INFO, 
     handlers=[ logging.FileHandler("debug.log"), logging.StreamHandler()] )
 
@@ -25,11 +27,10 @@ CERT = r"./certs/wis2_bridge_new.cert.pem"
 KEY = r"./certs/wis2_bridge_new.private.key"
 CA = r"./cas/AmazonRootCA1.pem"
 
-TOPIC = "cache/a/wis2/#"
-
-load_dotenv()
+#load_dotenv()
 
 
+TOPICS = os.getenv("TOPICS").split(",")
 
 # Callback when connection is accidentally lost.
 def on_connection_interrupted(connection, error, **kwargs):
@@ -61,8 +62,9 @@ def on_connect_wis(client, userdata, flags, rc):
     set the bad connection flag for rc >0, Sets onnected_flag if connected ok
     also subscribes to topics
     """
-    logging.info("Connected flags:"+str(flags)+" result code: "+str(rc))    
-    client_wis2.subscribe(TOPIC)
+    logging.info("Connected flags:"+str(flags)+" topics:"+str(TOPICS)+" result code: "+str(rc))    
+    topics = [(topic,0) for topic in TOPICS]
+    client_wis2.subscribe(topics)
 
 def on_subscribe(client,userdata,mid,granted_qos):
     """removes mid values from subscribe list"""
@@ -93,20 +95,28 @@ def message_routing(client,topic,msg):
     
     topic_levels = topic.split("/")
 
-    # only take levels 4 to 10, if they are there. Levels 1-3 are fix for the moment
-    topic = "/".join(topic_levels[3:10]) if len(topic_levels) > 10 else "/".join(topic_levels[3:-1])
+    # only take levels 4 to 12, if they are there. Levels 1-3 are fix for the moment
+    topic_new = "/".join(topic_levels[3:9]) if len(topic_levels) > 10 else "/".join(topic_levels[3:])
+    topic_new = topic_levels[0] + "/" + topic_new
+
+    msg = json.loads(msg)
+    msg["_meta"] = { "time_received" : datetime.now().isoformat() , "broker" : host , "topic" : topic }
+
+    msg = json.dumps(msg)
       
-    logging.debug(f"publishing topic {topic} with length {len(topic)} and message length {len(msg)} ")
-    client_aws.publish(topic=topic,payload=msg,qos=mqtt.QoS.AT_LEAST_ONCE)
+    logging.debug(f"publishing topic {topic_new} with length {len(topic_levels)} and message length {len(msg)} and {msg}")
+    logging.debug(f"publishing message {msg}")
+    client_aws.publish(topic=topic_new,payload=msg,qos=mqtt.QoS.AT_LEAST_ONCE)
         
-def create_wis2_connection():
-    logging.info("creating wis2 connection")
+def create_wis2_connection(host,port):
+    logging.info(f"creating wis2 connection to {host}:{port}")
     
-    client = mqtt_paho.Client(client_id="wis2_bridge_new", transport="websockets",
+    client = mqtt_paho.Client(client_id="wis2_bridge_new", transport="tcp",
          protocol=mqtt_paho.MQTTv311, clean_session=False)
                          
     client.username_pw_set(os.getenv("WIS_USERNAME"),os.getenv("WIS_PASSWORD"))
-    client.tls_set(certfile=None, keyfile=None, cert_reqs=ssl.CERT_REQUIRED)
+    if port == 8883:
+        client.tls_set(certfile=None, keyfile=None, cert_reqs=ssl.CERT_REQUIRED)
     
     client.on_message = on_message
     client.on_connect = on_connect_wis
@@ -116,9 +126,8 @@ def create_wis2_connection():
     #properties=Properties(PacketTypes.CONNECT)
     #properties.SessionExpiryInterval=30*60 # in seconds
     
-    client.connect("globalbroker.meteo.fr",
-                   #port=8883,
-                   port=443,
+    client.connect(host,
+                   port=port,
                    #clean_start=mqtt_paho.MQTT_CLEAN_START_FIRST_ONLY,
                    #properties=properties,
                    keepalive=60)
@@ -145,8 +154,10 @@ try:
     connect.result()
     logging.info("connected to AWS")    
     
+    host = os.getenv("BROKER_HOST")
+    port = int(os.getenv("BROKER_PORT"))
     logging.info("creating connection to WIS2")
-    client_wis2 = create_wis2_connection()
+    client_wis2 = create_wis2_connection(host,port)
     logging.info("connected to WIS2")
 
     client_wis2.loop_forever() #start loop

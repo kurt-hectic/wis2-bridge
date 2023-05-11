@@ -1,7 +1,24 @@
 version: "3.9"
 services:
-  bridge:
+  bridge_mf:
     build: .
     volumes:
       - ./wis2toaws.py:/app/wis2toaws.py
-    restart: on-failure
+      - ./debug.log:/app/debug.log
+    restart: always
+
+    environment:
+      - BROKER_HOST=globalbroker.meteo.fr
+      - BROKER_PORT=8883
+      - BROKER_HOST_CMA=gb.wis.cma.cn
+      - BROKER_PORT_CMA=1883
+      - TOPICS=cache/a/wis2/#,origin/a/wis2/#
+      - WIS_USERNAME=everyone
+      - WIS_PASSWORD=everyone
+
+    logging:
+      driver: loki
+      options:
+        loki-url: ${LOKI_URL}
+        labels: host,container_name
+
